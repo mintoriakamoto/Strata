@@ -7,6 +7,12 @@
 // Activations: int8, zero-padded to groups * 5 values. For each group of five, a 256-entry int16 table of the
 // product with every possible byte sits in shared memory; a row's dot product is one lookup and one add per byte.
 // |table entry| <= 5 * 127, so int16 cannot overflow; accumulation is int32.
+//
+// Prior art, so the design is not mistaken for new: five trits per byte with a 256-entry table of dot products is
+// QTEA's CUDA GEMV (arXiv 2609.00224, measured on an H200, which also builds only half the table by sign symmetry
+// and keeps activations in fp16); the table-lookup idea is T-MAC's (arXiv 2407.00088); BITCOS (arXiv 2609.16338)
+// uses a 256-entry shared-memory table on Intel Xe2. T-SAR (arXiv 2511.13676) reports table accesses as over 75% of
+// memory requests on CPUs, the same risk as shared-memory bank conflicts here.
 #include <cuda_runtime.h>
 #include <stdint.h>
 
