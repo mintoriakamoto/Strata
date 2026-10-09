@@ -1,0 +1,40 @@
+name: ternary-tests
+
+on:
+  pull_request:
+    paths:
+      - "tools/ternary_lut.py"
+      - "tools/test_ternary_lut.py"
+      - "src/kernels/cuda/ternary_*.cu"
+  push:
+    branches: [ternary-lut-reference]
+  workflow_dispatch:
+
+jobs:
+  python-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+      - name: NumPy reference tests (no GPU)
+        run: python -m unittest tools.test_ternary_lut -v
+
+  cuda-syntax:
+    # Compile-only check on a CUDA toolkit runner. Skipped when the runner has no nvcc, so it never fails on a
+    # toolchain gap; the first real GPU run is still the ternary_bench on the card.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for nvcc
+        id: nvcc
+        run: |
+          if command -v nvcc >/dev/null 2>&1; then echo "have=1" >> "$GITHUB_OUTPUT"; else echo "have=0" >> "$GITHUB_OUTPUT"; echo "::notice::nvcc not on this runner; compile check skipped"; fi
+      - name: Compile ternary kernels for sm_80
+        if: steps.nvcc.outputs.have == '1'
+        run: |
+          cd src/kernels/cuda
+          nvcc -std=c++17 -O3 -arch=sm_80 -c ternary_lut.cu -o /tmp/ternary_lut.o
+          nvcc -std=c++17 -O3 -arch=sm_80 -c ternary_mma.cu -o /tmp/ternary_mma.o
