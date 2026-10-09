@@ -874,13 +874,16 @@ bool MtpDrafter::record_rest(int step_row, cudaStream_t cs, std::string& err) {
         }
         // #783 PR-c (stuchapin909): a multi-token window routes in two launches (one router GEMV reading the weight once,
         // one top-10 over all rows - each row bitwise the single-token call) and combines in one
-        if (T > 1 && native_router_enabled() && g.n_expert == 512 && K == 10) {
+        // The native router is compiled for 512 experts and K = 10 only. A 256-expert model (the Coder) must use the
+        // generic router_top10 on both paths; the single-token path used to call the native one for any width.
+        const bool native_route = native_router_enabled() && g.n_expert == 512 && K == 10;
+        if (T > 1 && native_route) {
             bf16_gemv_fp32_mmvf_multi(mixed_, N, bf16("mlp.gate.weight"), logits_, g.n_expert, (int) N, (int) g.n_expert, T, cs);
             native_router_top10_multi(logits_, ids_, w_, T, cs);
         } else {
         for (int t = 0; t < T; ++t) {
             bf16_gemv_fp32_mmvf(mixed_ + t * N, bf16("mlp.gate.weight"), logits_ + t * g.n_expert, (int) N, (int) g.n_expert, cs);
-            if (native_router_enabled()) native_router_top10(logits_ + t * g.n_expert, ids_ + t * K, w_ + t * K, cs);
+            if (native_route) native_router_top10(logits_ + t * g.n_expert, ids_ + t * K, w_ + t * K, cs);
             else router_top10(logits_ + t * g.n_expert, 1, (int) g.n_expert, (int) K, ids_ + t * K, w_ + t * K, cs);
         }
         }
